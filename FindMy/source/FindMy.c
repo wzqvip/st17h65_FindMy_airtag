@@ -36,6 +36,7 @@
 #include "ll_def.h"
 #include "hci_tl.h"
 #include "flash.h"
+#include "keys_config.h"
 /*********************************************************************
  * MACROS
  */
@@ -105,10 +106,7 @@ static	gaprole_States_t	gapProfileState	=	GAPROLE_INIT;
 
 
 uint8	dev_mac_data[MAC_DATA_LEN]	=	{0x00,0x00,0x00,0x00,0x00,0x00};
-static uint8 public_key[] = {
-	0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xef,
-	0xfe,0xdd,0xcc,0xbb,0xaa,0x99,0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11
-};
+static uint16 g_current_key_idx = 0;
 
 void set_addr_from_key(uint8 *dev_mac_data, uint8 *public_key)
 {
@@ -141,6 +139,32 @@ static uint8 advertData[] =
 	0x00, /* First two bits */
 	0x00, /* Hint (0x00) */
 };
+
+void apply_key_at_index(uint16 index)
+{
+	if (index >= ROLLING_KEYS_COUNT) {
+		index = 0;
+	}
+	g_current_key_idx = index;
+	set_addr_from_key(dev_mac_data, (uint8*)&g_rolling_public_keys[index][0]);
+	set_payload_from_key(advertData, (uint8*)&g_rolling_public_keys[index][0]);
+
+	extern uint8 ownPublicAddr[LL_DEVICE_ADDR_LEN];
+	for (uint8 i = 0; i < LL_DEVICE_ADDR_LEN; i++) {
+		ownPublicAddr[i] = dev_mac_data[LL_DEVICE_ADDR_LEN - 1 - i];
+	}
+	GAPRole_SetParameter(GAPROLE_ADVERT_DATA, sizeof(advertData), advertData);
+}
+
+void rotate_to_next_key(void)
+{
+	uint8 disable = FALSE;
+	uint8 enable = TRUE;
+	GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8), &disable);
+	apply_key_at_index(g_current_key_idx + 1);
+	GAPRole_SetParameter(GAPROLE_ADVERT_ENABLED, sizeof(uint8), &enable);
+	LOG("Rotated to rolling key index: %d\n", g_current_key_idx);
+}
 
 // GAP GATT Attributes
 static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "FindMy";
@@ -230,8 +254,7 @@ void SimpleBLEPeripheral_Init( uint8 task_id )
 		};
 
 		{
-			set_addr_from_key(dev_mac_data, public_key);
-			set_payload_from_key(advertData, public_key);
+			apply_key_at_index(0);
 		}
 
 //        uint8 advType =g_current_advType;// LL_ADV_NONCONNECTABLE_UNDIRECTED_EVT;//LL_ADV_SCANNABLE_UNDIRECTED_EVT;//LL_ADV_CONNECTABLE_LDC_DIRECTED_EVT;//;    // it seems a  bug to set GAP_ADTYPE_ADV_NONCONN_IND = 0x03
@@ -307,7 +330,10 @@ void SimpleBLEPeripheral_Init( uint8 task_id )
     GAP_RegisterForHCIMsgs(simpleBLEPeripheral_TaskID);
 		LL_PLUS_PerStats_Init(&g_perStatsByChanTest);
 		LOG("=====SimpleBLEPeripheral_Init Done=======\n");
-	
+
+#if (ROLLING_KEYS_COUNT > 1)
+		osal_start_timerEx( simpleBLEPeripheral_TaskID, SBP_ROTATE_KEY_EVT, SBP_ROTATE_KEY_PERIOD_MS );
+#endif
 	
 //		pwroff_cfg_t cfg[1] = {
 //			P11, POL_FALLING, 1
@@ -372,6 +398,15 @@ uint16 SimpleBLEPeripheral_ProcessEvent( uint8 task_id, uint16 events )
 		LOG("\ndeal app datas in events!!!\n");
 		return(events ^ SBP_DEALDATA);
 	}
+
+    if ( events & SBP_ROTATE_KEY_EVT )
+    {
+        rotate_to_next_key();
+#if (ROLLING_KEYS_COUNT > 1)
+        osal_start_timerEx( simpleBLEPeripheral_TaskID, SBP_ROTATE_KEY_EVT, SBP_ROTATE_KEY_PERIOD_MS );
+#endif
+        return ( events ^ SBP_ROTATE_KEY_EVT );
+    }
     // Discard unknown events
     return 0;
 }

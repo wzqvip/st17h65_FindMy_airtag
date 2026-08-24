@@ -1,27 +1,34 @@
-# st17h66_FindMy
-Firmware for Lenze ST17h66 that advertises to the Apple Find My network, based on SDK v3.1.1.2
+# ST17H65 / ST17H66 FindMy Firmware (Rolling Keys Support)
 
-## Compile
-To compile this firmware either arm-none-eabi-gcc and CMSIS headers, or Keil uVision are required. The GCC path does not work yet, so use Keil.
+Firmware for Lenze ST17H66 / ST17H65 / PHY6202 chip that advertises to the Apple FindMy network, based on SDK v3.1.1.2. Enhanced with **native Rolling Keys (Key Rotation) support**.
 
-### Compile with Keil
-This should work properly, just open the FindMy.uvprojx and build.
+---
 
-### Compile with GCC
+## 🔑 Rolling Keys Setup
+
+Generate a set of rotating public keys using `generate_keys_st17h.py`:
+
+```bash
+# Generate 50 rolling keys with 1-hour (3600s) rotation period
+python generate_keys_st17h.py -n 50 -t 3600
 ```
-$ git clone https://github.com/ARM-software/CMSIS_5
-$ git clone https://github.com/biemster/st17h66_FindMy
-$ cd st17h66_FindMy/FindMy
-$ make
+
+This will automatically create/update `FindMy/source/keys_config.h` containing:
+- `ROLLING_KEYS_COUNT`: Number of rotating keys (e.g. 50).
+- `SBP_ROTATE_KEY_PERIOD_MS`: Rotation period in milliseconds (e.g. 3,600,000 ms).
+- `g_rolling_public_keys`: Array of 28-byte public keys.
+
+---
+
+## 🛠️ Compile Firmware
+
+### Compile with Keil uVision (Recommended)
+1. Open `FindMy/FindMy.uvprojx` in Keil uVision.
+2. Build the project. The output binary/hex will be generated in `FindMy/bin/`.
+
+### Compile with GCC (Experimental)
+```bash
+git clone https://github.com/ARM-software/CMSIS_5
+cd FindMy
+make
 ```
-GCC with the Makefile currently creates a 90kB hex file, which I havent tested yet. The following things might be wrong with it:
-1. The linker script `phy6202.ld` and startup code `startup_ARMCM0.c`.
-  - I copied those from https://github.com/AloyseTech/PHY6202_GCC (thanks @AloyseTech!), but they are for the phy6202 chip (of which the 17h66 seems to be a clone). Also @AloyseTech seems to not have been finished with this work yet.
-  - I actually have no clue what I'm doing here, this goes way beyond my expertise.
-2. The phy62XX BLE core code for `lib/*.lib`.
-  - Located in `lib/{rf,sec,ble_*}`, is likely the sources for the `.lib` files but I'm not sure. They don't seem to be open source, but leaked from https://github.com/duanmubingshuai/project.
-  - They are necessary because the GCC linker does not accept the provided `.lib` files.
-  - It's quite likely the correct source, since the precompiled libraries have the same `s_company_id = "PHY+62XXPLUS0504"` as the C code.
-3. The `bb_rom_sym_m0.gcc` file.
-  - This contains a lot of addresses for functions and variables, no clue where they come from. I followed what @AloyseTech did (thanks again @AloyseTech!).
-  - This might be hit or miss, I don't know if compiling the firmware with GCC will put those symbols on different addresses, or maybe those objects are in some sort of bootloader.
