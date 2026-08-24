@@ -35,12 +35,29 @@ jobs:
         run: |
           make
 
-      - name: Upload Firmware Binaries
+      - name: Package Firmware Binaries
+        run: |
+          mkdir -p release_assets
+          cp FindMy/build/FindMy.hex release_assets/
+          cp FindMy/build/FindMy.bin release_assets/
+          cd release_assets && zip -r st17h65_firmware.zip FindMy.hex FindMy.bin
+
+      - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: st17h65-firmware
+          name: st17h65-firmware-binaries
           path: |
-            FindMy/build/FindMy.hex
-            FindMy/build/FindMy.bin
-            FindMy/source/keys_config.h
-            output/*.json
+            release_assets/FindMy.hex
+            release_assets/FindMy.bin
+            release_assets/st17h65_firmware.zip
+
+      - name: Publish Release (on release or tag)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release_assets/FindMy.hex
+            release_assets/FindMy.bin
+            release_assets/st17h65_firmware.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
