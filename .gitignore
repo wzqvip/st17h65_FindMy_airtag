@@ -1,0 +1,11 @@
+# Build outputs
+FindMy/build/
+FindMy/bin/*.bin
+FindMy/bin/*.hex
+output/
+
+# IDE files
+*.uvgui.*
+*.uvoptx
+*.bak
+*.dep
